@@ -39,7 +39,7 @@ func embedCmd() *cobra.Command {
 				StegoKey:      key,
 				NLsb:          lsb,
 				UseRandomSeed: random,
-				UseEncryption: false, 
+				UseEncryption: false,
 				OutputPath:    output,
 			}
 
@@ -48,7 +48,7 @@ func embedCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("cover", "c", "", "Cover audio file (MP3)")
-	cmd.Flags().StringP("message", "m", "", "Secret message file")
+	cmd.Flags().StringP("message", "m", "", "Secret file to embed (any file type)")
 	cmd.Flags().StringP("key", "k", "", "Steganography key (max 25 characters)")
 	cmd.Flags().IntP("lsb", "l", 1, "Number of LSB bits to use (1-4)")
 	cmd.Flags().BoolP("random", "r", false, "Use random seed for embedding positions")
@@ -84,7 +84,7 @@ func extractCmd() *cobra.Command {
 
 	cmd.Flags().StringP("stego", "s", "", "Stego audio file (MP3)")
 	cmd.Flags().StringP("key", "k", "", "Steganography key (max 25 characters)")
-	cmd.Flags().StringP("output", "o", "", "Output message file")
+	cmd.Flags().StringP("output", "o", "", "Output extracted file")
 
 	cmd.MarkFlagRequired("stego")
 	cmd.MarkFlagRequired("key")

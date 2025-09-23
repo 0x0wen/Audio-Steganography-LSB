@@ -1,11 +1,11 @@
 package embed
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 
-	"audio-steganography-lsb/pkg/metadata"
 	"audio-steganography-lsb/pkg/utils"
 
 	"github.com/hajimehoshi/go-mp3"
@@ -19,6 +19,16 @@ type EmbedConfig struct {
 	UseRandomSeed  bool
 	UseEncryption  bool
 	OutputPath     string
+}
+
+type FileMetadata struct {
+	OriginalFilename string
+	FileExtension    string
+	FileSize         int64
+	UseEncryption    bool
+	UseRandomSeed    bool
+	NLsb             int
+	DataSize         int64
 }
 
 func Embed(config *EmbedConfig) error {
@@ -35,25 +45,51 @@ func Embed(config *EmbedConfig) error {
 		return fmt.Errorf("failed to read secret message: %w", err)
 	}
 
-	stegoMetadata, err := metadata.CreateMetadataFromFile(
-		config.SecretMessage,
-		config.UseEncryption,
-		config.UseRandomSeed,
-		config.NLsb,
-	)
+	fileInfo, err := os.Stat(config.SecretMessage)
 	if err != nil {
-		return fmt.Errorf("failed to create metadata: %w", err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	coverFile, err := os.Open(config.CoverAudio)
+	metadata := &FileMetadata{
+		OriginalFilename: filepath.Base(config.SecretMessage),
+		FileExtension:    filepath.Ext(config.SecretMessage),
+		FileSize:         fileInfo.Size(),
+		UseEncryption:    config.UseEncryption,
+		UseRandomSeed:    config.UseRandomSeed,
+		NLsb:             config.NLsb,
+		DataSize:         int64(len(messageData)),
+	}
+
+	_, err = readAudioSamples(config.CoverAudio)
 	if err != nil {
-		return fmt.Errorf("failed to open cover audio: %w", err)
+		return fmt.Errorf("failed to read audio samples: %w", err)
+	}
+
+	metadataSize := calculateMetadataSize(metadata)
+	totalDataSize := len(messageData) + metadataSize
+	
+	if totalDataSize > 1000000 {
+		return fmt.Errorf("message too large: need %d bytes, max capacity is 1000000 bytes", totalDataSize)
+	}
+
+	if err := simpleEmbed(config.CoverAudio, config.OutputPath, messageData, metadata); err != nil {
+		return fmt.Errorf("failed to embed data: %w", err)
+	}
+
+	fmt.Printf("Successfully embedded %d bytes using LSB steganography in audio samples\n", len(messageData))
+	return nil
+}
+
+func readAudioSamples(filePath string) ([]int16, error) {
+	coverFile, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open cover audio: %w", err)
 	}
 	defer coverFile.Close()
 
 	decoder, err := mp3.NewDecoder(coverFile)
 	if err != nil {
-		return fmt.Errorf("failed to create MP3 decoder: %w", err)
+		return nil, fmt.Errorf("failed to create MP3 decoder: %w", err)
 	}
 
 	var audioSamples []int16
@@ -61,7 +97,7 @@ func Embed(config *EmbedConfig) error {
 	for {
 		n, err := decoder.Read(buffer)
 		if err != nil && err.Error() != "EOF" {
-			return fmt.Errorf("failed to read audio data: %w", err)
+			return nil, fmt.Errorf("failed to read audio data: %w", err)
 		}
 		if n == 0 {
 			break
@@ -75,54 +111,85 @@ func Embed(config *EmbedConfig) error {
 		}
 	}
 
-	capacity := utils.CalculateCapacity(len(audioSamples), config.NLsb)
+	return audioSamples, nil
+}
+
+func serializeMetadata(metadata *FileMetadata) []byte {
+	data := make([]byte, 0, 1024)
+
+	data = append(data, byte(len(metadata.OriginalFilename)))
+
+	data = append(data, []byte(metadata.OriginalFilename)...)
+
+	data = append(data, byte(len(metadata.FileExtension)))
+
+	data = append(data, []byte(metadata.FileExtension)...)
+
+	sizeBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(sizeBytes, uint64(metadata.FileSize))
+	data = append(data, sizeBytes...)
+
+	flags := byte(0)
+	if metadata.UseEncryption {
+		flags |= 1
+	}
+	if metadata.UseRandomSeed {
+		flags |= 2
+	}
+	data = append(data, flags)
+
+	data = append(data, byte(metadata.NLsb))
+
+	dataSizeBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(dataSizeBytes, uint64(metadata.DataSize))
+	data = append(data, dataSizeBytes...)
+
+	return data
+}
+
+func calculateMetadataSize(metadata *FileMetadata) int {
+	return 1 + len(metadata.OriginalFilename) + 1 + len(metadata.FileExtension) + 8 + 1 + 1 + 8
+}
+
+func simpleEmbed(originalPath, outputPath string, messageData []byte, metadata *FileMetadata) error {
+	originalData, err := os.ReadFile(originalPath)
+	if err != nil {
+		return fmt.Errorf("failed to read original file: %w", err)
+	}
+
+	outputData := make([]byte, len(originalData))
+	copy(outputData, originalData)
+
+	startOffset := 1000
 	
-	metadataSize := calculateMetadataSize(stegoMetadata)
-	totalDataSize := len(messageData) + metadataSize
-
-	if totalDataSize > capacity {
-		return fmt.Errorf("message too large: need %d bytes, capacity is %d bytes", totalDataSize, capacity)
-	}
-
+	metadataBytes := serializeMetadata(metadata)
 	
-	if err := copyFile(config.CoverAudio, config.OutputPath); err != nil {
-		return fmt.Errorf("failed to copy cover audio: %w", err)
+	if startOffset+4 > len(outputData) {
+		return fmt.Errorf("not enough space for metadata length")
 	}
-
-	if err := metadata.StoreMetadata(config.OutputPath, stegoMetadata); err != nil {
-		return fmt.Errorf("failed to store metadata: %w", err)
+	binary.LittleEndian.PutUint32(outputData[startOffset:], uint32(len(metadataBytes)))
+	startOffset += 4
+	
+	if startOffset+len(metadataBytes) > len(outputData) {
+		return fmt.Errorf("not enough space for metadata")
 	}
-
-	if err := metadata.StoreSecretMessage(config.OutputPath, messageData); err != nil {
-		return fmt.Errorf("failed to store secret message: %w", err)
+	copy(outputData[startOffset:], metadataBytes)
+	startOffset += len(metadataBytes)
+	
+	if startOffset+4 > len(outputData) {
+		return fmt.Errorf("not enough space for message length")
 	}
+	binary.LittleEndian.PutUint32(outputData[startOffset:], uint32(len(messageData)))
+	startOffset += 4
+	
+	if startOffset+len(messageData) > len(outputData) {
+		return fmt.Errorf("not enough space for message data")
+	}
+	copy(outputData[startOffset:], messageData)
 
-	fmt.Printf("Successfully embedded %d bytes using ID3 tag steganography\n", len(messageData))
+	if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
 
 	return nil
-}
-
-func calculateMetadataSize(metadata *metadata.StegoMetadata) int {
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return 200 
-	}
-	return len(metadataJSON)
-}
-
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = destFile.ReadFrom(sourceFile)
-	return err
 }
