@@ -74,11 +74,15 @@ func extractCmd() *cobra.Command {
 			stego, _ := cmd.Flags().GetString("stego")
 			key, _ := cmd.Flags().GetString("key")
 			output, _ := cmd.Flags().GetString("output")
+			decrypt, _ := cmd.Flags().GetBool("decrypt") // args untuk enkripsi
+
 
 			config := &extract.ExtractConfig{
 				StegoAudio: stego,
 				StegoKey:   key,
 				OutputPath: output,
+				UseDecryption: decrypt, // set config sesuai var decrypt
+
 			}
 
 			return extract.Extract(config)
@@ -88,6 +92,8 @@ func extractCmd() *cobra.Command {
 	cmd.Flags().StringP("stego", "s", "", "Stego audio file (MP3)")
 	cmd.Flags().StringP("key", "k", "", "Steganography key (max 25 characters)")
 	cmd.Flags().StringP("output", "o", "", "Output message file")
+	cmd.Flags().BoolP("decrypt", "d", false, "Decrypt the message after extracting") // flag untuk enkripsi
+
 
 	cmd.MarkFlagRequired("stego")
 	cmd.MarkFlagRequired("key")

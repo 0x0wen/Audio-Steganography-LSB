@@ -9,6 +9,8 @@ import (
 	"audio-steganography-lsb/pkg/utils"
 
 	"github.com/hajimehoshi/go-mp3"
+
+	"audio-steganography-lsb/pkg/encrypt"
 )
 
 type EmbedConfig struct {
@@ -33,6 +35,10 @@ func Embed(config *EmbedConfig) error {
 	messageData, err := utils.ReadFile(config.SecretMessage)
 	if err != nil {
 		return fmt.Errorf("failed to read secret message: %w", err)
+	}
+
+	if config.UseEncryption {
+		messageData = vigenere.Encrypt(messageData, config.StegoKey)
 	}
 
 	stegoMetadata, err := metadata.CreateMetadataFromFile(
