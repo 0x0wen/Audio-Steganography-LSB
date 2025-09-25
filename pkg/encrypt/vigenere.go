@@ -19,14 +19,14 @@ func generateKey(text string, key string) []byte {
 }
 
 // Extended Vigenère encryption.
-// The formula is C = (P + K) mod 256
+// Formula : C = (P + K) mod 256
 func Encrypt(plaintext string, key string) string {
 	plaintextBytes := []byte(plaintext)
 	keyBytes := generateKey(plaintext, key)
 	ciphertext := make([]byte, len(plaintextBytes))
 
 	for i := 0; i < len(plaintextBytes); i++ {
-		// Formula: (plaintext_char + key_char) % 256
+		// Formula : (plaintext_char + key_char) % 256
 		// Cast to int to perform calculation and avoid byte overflow.
 		ciphertext[i] = byte((int(plaintextBytes[i]) + int(keyBytes[i])) % 256)
 	}
@@ -34,14 +34,14 @@ func Encrypt(plaintext string, key string) string {
 }
 
 // Extended Vigenère decryption.
-// The formula is P = (C - K + 256) mod 256
+// Formula : P = (C - K + 256) mod 256
 func Decrypt(ciphertext string, key string) string {
 	ciphertextBytes := []byte(ciphertext)
 	keyBytes := generateKey(ciphertext, key)
 	plaintext := make([]byte, len(ciphertextBytes))
 
 	for i := 0; i < len(ciphertextBytes); i++ {
-		// Formula: (ciphertext_char - key_char + 256) % 256
+		// Formula : (ciphertext_char - key_char + 256) % 256
 		plaintext[i] = byte((int(ciphertextBytes[i]) - int(keyBytes[i]) + 256) % 256)
 	}
 	return string(plaintext)

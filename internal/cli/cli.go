@@ -3,6 +3,7 @@ package cli
 import (
 	"audio-steganography-lsb/pkg/embed"
 	"audio-steganography-lsb/pkg/extract"
+//	"audio-steganography-lsb/pkg/encrypt" // added import for encryption
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,7 @@ func embedCmd() *cobra.Command {
 			key, _ := cmd.Flags().GetString("key")
 			lsb, _ := cmd.Flags().GetInt("lsb")
 			random, _ := cmd.Flags().GetBool("random")
+			encrypt, _ := cmd.Flags().GetBool("encrypt") // args untuk enkripsi
 			output, _ := cmd.Flags().GetString("output")
 
 			config := &embed.EmbedConfig{
@@ -39,7 +41,7 @@ func embedCmd() *cobra.Command {
 				StegoKey:      key,
 				NLsb:          lsb,
 				UseRandomSeed: random,
-				UseEncryption: false, 
+				UseEncryption: encrypt, // set config sesuai var encrypt
 				OutputPath:    output,
 			}
 
@@ -52,6 +54,7 @@ func embedCmd() *cobra.Command {
 	cmd.Flags().StringP("key", "k", "", "Steganography key (max 25 characters)")
 	cmd.Flags().IntP("lsb", "l", 1, "Number of LSB bits to use (1-4)")
 	cmd.Flags().BoolP("random", "r", false, "Use random seed for embedding positions")
+	cmd.Flags().BoolP("encrypt", "e", false, "Encrypt the message before embedding") // flag untuk enkripsi
 	cmd.Flags().StringP("output", "o", "", "Output stego audio file")
 
 	cmd.MarkFlagRequired("cover")
