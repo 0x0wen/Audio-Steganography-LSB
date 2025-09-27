@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 
 	"audio-steganography-lsb/pkg/utils"
-
-	"github.com/hajimehoshi/go-mp3"
 )
 
 type EmbedConfig struct {
@@ -60,58 +58,200 @@ func Embed(config *EmbedConfig) error {
 		DataSize:         int64(len(messageData)),
 	}
 
-	_, err = readAudioSamples(config.CoverAudio)
-	if err != nil {
-		return fmt.Errorf("failed to read audio samples: %w", err)
+	if err := embedMP3Bitstream(config.CoverAudio, messageData, metadata, config.StegoKey, config.UseRandomSeed, config.NLsb, config.OutputPath); err != nil {
+		return fmt.Errorf("failed to embed data in MP3 bitstream: %w", err)
 	}
 
-	metadataSize := calculateMetadataSize(metadata)
-	totalDataSize := len(messageData) + metadataSize
-	
-	if totalDataSize > 1000000 {
-		return fmt.Errorf("message too large: need %d bytes, max capacity is 1000000 bytes", totalDataSize)
-	}
-
-	if err := simpleEmbed(config.CoverAudio, config.OutputPath, messageData, metadata); err != nil {
-		return fmt.Errorf("failed to embed data: %w", err)
-	}
-
-	fmt.Printf("Successfully embedded %d bytes using LSB steganography in audio samples\n", len(messageData))
+	fmt.Printf("Successfully embedded %d bytes using MP3 bitstream steganography\n", len(messageData))
 	return nil
 }
 
-func readAudioSamples(filePath string) ([]int16, error) {
-	coverFile, err := os.Open(filePath)
+func embedMP3Bitstream(coverPath string, messageData []byte, metadata *FileMetadata, stegoKey string, useRandomSeed bool, nLsb int, outputPath string) error {
+	mp3Data, err := os.ReadFile(coverPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open cover audio: %w", err)
-	}
-	defer coverFile.Close()
-
-	decoder, err := mp3.NewDecoder(coverFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create MP3 decoder: %w", err)
+		return fmt.Errorf("failed to read MP3 file: %w", err)
 	}
 
-	var audioSamples []int16
-	buffer := make([]byte, 1024)
-	for {
-		n, err := decoder.Read(buffer)
-		if err != nil && err.Error() != "EOF" {
-			return nil, fmt.Errorf("failed to read audio data: %w", err)
-		}
-		if n == 0 {
+	paramHeader := createParameterHeader(nLsb, useRandomSeed, stegoKey)
+
+	embeddablePositions := findEmbeddablePositions(mp3Data)
+	if len(embeddablePositions) < 64 {
+		return fmt.Errorf("not enough embeddable positions for parameter header")
+	}
+
+	modifiedMP3Data := make([]byte, len(mp3Data))
+	copy(modifiedMP3Data, mp3Data)
+
+	if err := embedParameterHeader(modifiedMP3Data, embeddablePositions[:64], paramHeader); err != nil {
+		return fmt.Errorf("failed to embed parameter header: %w", err)
+	}
+
+	metadataBytes := serializeMetadata(metadata)
+
+	dataToEmbed := make([]byte, 0, 4+len(metadataBytes)+4+len(messageData))
+
+	metadataLenBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(metadataLenBytes, uint32(len(metadataBytes)))
+	dataToEmbed = append(dataToEmbed, metadataLenBytes...)
+
+	dataToEmbed = append(dataToEmbed, metadataBytes...)
+
+	messageLenBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(messageLenBytes, uint32(len(messageData)))
+	dataToEmbed = append(dataToEmbed, messageLenBytes...)
+
+	dataToEmbed = append(dataToEmbed, messageData...)
+
+	if err := embedDataInMP3Frames(modifiedMP3Data, embeddablePositions[64:], dataToEmbed, stegoKey, useRandomSeed, nLsb); err != nil {
+		return fmt.Errorf("failed to embed data in MP3 frames: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, modifiedMP3Data, 0644); err != nil {
+		return fmt.Errorf("failed to write output MP3: %w", err)
+	}
+
+	return nil
+}
+
+func createParameterHeader(nLsb int, useRandomSeed bool, stegoKey string) []byte {
+	header := make([]byte, 8)
+
+	header[0] = 0xAB 
+	header[1] = 0xCD 
+
+	header[2] = byte(nLsb)
+
+	if useRandomSeed {
+		header[3] = 1
+	} else {
+		header[3] = 0
+	}
+
+	keySum := uint32(0)
+	for _, b := range []byte(stegoKey) {
+		keySum += uint32(b)
+	}
+	binary.LittleEndian.PutUint32(header[4:8], keySum)
+
+	return header
+}
+
+func embedParameterHeader(mp3Data []byte, positions []int, header []byte) error {
+	if len(positions) < len(header)*8 {
+		return fmt.Errorf("not enough positions for header")
+	}
+
+	headerBits := bytesToBits(header)
+
+	for i, bit := range headerBits {
+		if i >= len(positions) {
 			break
 		}
 
-		for i := 0; i < n; i += 2 {
-			if i+1 < n {
-				sample := int16(buffer[i]) | (int16(buffer[i+1]) << 8)
-				audioSamples = append(audioSamples, sample)
+		pos := positions[i]
+		if pos >= len(mp3Data) {
+			continue
+		}
+
+		mp3Data[pos] = mp3Data[pos] & 0xFE 
+		if bit {
+			mp3Data[pos] = mp3Data[pos] | 0x01 
+		}
+	}
+
+	return nil
+}
+
+func embedDataInMP3Frames(mp3Data []byte, positions []int, data []byte, stegoKey string, useRandomSeed bool, nLsb int) error {
+	bits := bytesToBits(data)
+
+	dataPositions, err := utils.GeneratePositions(stegoKey, useRandomSeed, len(positions), nLsb)
+	if err != nil {
+		return fmt.Errorf("failed to generate positions: %w", err)
+	}
+
+	capacity := len(dataPositions) * nLsb
+	if len(bits) > capacity {
+		return fmt.Errorf("data too large: need %d bits, capacity is %d bits", len(bits), capacity)
+	}
+
+	bitIndex := 0
+	for _, posIndex := range dataPositions {
+		if bitIndex >= len(bits) || posIndex >= len(positions) {
+			break
+		}
+
+		actualPos := positions[posIndex]
+		if actualPos >= len(mp3Data) {
+			continue
+		}
+
+		for i := 0; i < nLsb && bitIndex < len(bits); i++ {
+			bit := bits[bitIndex]
+
+			mask := ^(1 << i)
+			mp3Data[actualPos] = mp3Data[actualPos] & byte(mask)
+
+			if bit {
+				mp3Data[actualPos] = mp3Data[actualPos] | (1 << i)
+			}
+			bitIndex++
+		}
+	}
+
+	return nil
+}
+
+func findEmbeddablePositions(mp3Data []byte) []int {
+	var positions []int
+
+
+	skipStart := 512 
+
+	frameHeaders := make(map[int]bool)
+	for i := 0; i < len(mp3Data)-1; i++ {
+		if mp3Data[i] == 0xFF && (mp3Data[i+1]&0xE0) == 0xE0 {
+			for j := 0; j < 4 && i+j < len(mp3Data); j++ {
+				frameHeaders[i+j] = true
 			}
 		}
 	}
 
-	return audioSamples, nil
+	for i := skipStart; i < len(mp3Data); i++ {
+		if frameHeaders[i] {
+			continue
+		}
+
+		if mp3Data[i] == 0xFF && i < len(mp3Data)-1 && (mp3Data[i+1]&0xE0) == 0xE0 {
+			continue
+		}
+
+		positions = append(positions, i)
+	}
+
+	if len(positions) < 10000 && len(mp3Data) > 2000 {
+		positions = []int{}
+		start := 2000 
+		step := 1 
+
+		for i := start; i < len(mp3Data); i += step {
+			if mp3Data[i] == 0xFF {
+				continue 
+			}
+
+			if i > 0 && mp3Data[i-1] == 0xFF && (mp3Data[i]&0xE0) == 0xE0 {
+				continue
+			}
+
+			if i < len(mp3Data)-1 && mp3Data[i+1] == 0xFF {
+				continue
+			}
+
+			positions = append(positions, i)
+		}
+	}
+
+	return positions
 }
 
 func serializeMetadata(metadata *FileMetadata) []byte {
@@ -147,49 +287,12 @@ func serializeMetadata(metadata *FileMetadata) []byte {
 	return data
 }
 
-func calculateMetadataSize(metadata *FileMetadata) int {
-	return 1 + len(metadata.OriginalFilename) + 1 + len(metadata.FileExtension) + 8 + 1 + 1 + 8
-}
-
-func simpleEmbed(originalPath, outputPath string, messageData []byte, metadata *FileMetadata) error {
-	originalData, err := os.ReadFile(originalPath)
-	if err != nil {
-		return fmt.Errorf("failed to read original file: %w", err)
+func bytesToBits(data []byte) []bool {
+	bits := make([]bool, len(data)*8)
+	for i, b := range data {
+		for j := 0; j < 8; j++ {
+			bits[i*8+j] = (b>>j)&1 == 1
+		}
 	}
-
-	outputData := make([]byte, len(originalData))
-	copy(outputData, originalData)
-
-	startOffset := 1000
-	
-	metadataBytes := serializeMetadata(metadata)
-	
-	if startOffset+4 > len(outputData) {
-		return fmt.Errorf("not enough space for metadata length")
-	}
-	binary.LittleEndian.PutUint32(outputData[startOffset:], uint32(len(metadataBytes)))
-	startOffset += 4
-	
-	if startOffset+len(metadataBytes) > len(outputData) {
-		return fmt.Errorf("not enough space for metadata")
-	}
-	copy(outputData[startOffset:], metadataBytes)
-	startOffset += len(metadataBytes)
-	
-	if startOffset+4 > len(outputData) {
-		return fmt.Errorf("not enough space for message length")
-	}
-	binary.LittleEndian.PutUint32(outputData[startOffset:], uint32(len(messageData)))
-	startOffset += 4
-	
-	if startOffset+len(messageData) > len(outputData) {
-		return fmt.Errorf("not enough space for message data")
-	}
-	copy(outputData[startOffset:], messageData)
-
-	if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
-		return fmt.Errorf("failed to write output file: %w", err)
-	}
-
-	return nil
+	return bits
 }

@@ -50,14 +50,14 @@ func TestExtractValidation(t *testing.T) {
 			errorMsg:    "invalid stego key",
 		},
 		{
-			name: "valid config",
+			name: "valid config with nonexistent file",
 			config: &ExtractConfig{
 				StegoAudio: "stego.mp3",
 				StegoKey:   "testkey",
 				OutputPath: outputFile,
 			},
 			expectError: true,
-			errorMsg:    "failed to retrieve secret message",
+			errorMsg:    "failed to read audio samples",
 		},
 	}
 
@@ -87,7 +87,7 @@ func TestExtractWithNonexistentFile(t *testing.T) {
 
 	err := Extract(config)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to retrieve secret message")
+	assert.Contains(t, err.Error(), "failed to read audio samples")
 }
 
 func TestExtractWithInvalidOutputPath(t *testing.T) {
@@ -99,7 +99,7 @@ func TestExtractWithInvalidOutputPath(t *testing.T) {
 
 	err := Extract(config)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to retrieve secret message")
+	assert.Contains(t, err.Error(), "failed to read audio samples")
 }
 
 func TestExtractConfigFields(t *testing.T) {
