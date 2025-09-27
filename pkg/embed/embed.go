@@ -45,10 +45,8 @@ func Embed(config *EmbedConfig) error {
 	messageData, err := utils.ReadFile(config.SecretMessage)
 	if err != nil {
 		return fmt.Errorf("failed to read secret message: %w", err)
-	}
-
-	if config.UseEncryption {
-		messageData = vigenere.Encrypt(messageData, config.StegoKey)
+	}else if config.UseEncryption{
+		messageData = encrypt.VigenereEncrypt(messageData, config.StegoKey)
 	}
 
 	stegoMetadata, err := metadata.CreateMetadataFromFile(
@@ -60,6 +58,8 @@ func Embed(config *EmbedConfig) error {
 	fileInfo, err := os.Stat(config.SecretMessage)
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
+	}else if config.UseEncryption{
+		messageData = encrypt.VigenereEncrypt(messageData, config.StegoKey)
 	}
 
 	metadata := &FileMetadata{

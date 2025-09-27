@@ -29,7 +29,7 @@ install:
 
 # Run the application (example)
 run-embed:
-	./bin/steganography embed -c test/cover.mp3 -m test/secret.txt -k mykey -l 2 -r -o test/stego.mp3
+	./bin/steganography embed -c test/cover.mp3 -m test/test_pdf.pdf -k mykey -l 2 -r -o test/stego.mp3 -e true
 
 run-extract:
-	./bin/steganography extract -s test/stego.mp3 -k mykey -o test/extracted.txt
+	./bin/steganography extract -s test/stego.mp3 -k mykey -o test/extracted.pdf
