@@ -1,20 +1,23 @@
 # Audio Steganography LSB
 
-A Go implementation of audio steganography using ID3 tag storage for embedding secret messages in MP3 audio files.
+A Go implementation of audio steganography using multiple LSB (Least Significant Bit) techniques for embedding secret messages in MP3 audio files with MP3-aware robustness features.
 
 ## Overview
 
-This project implements steganography on MP3 audio files using ID3 tag storage. It allows users to embed secret messages into MP3 metadata tags and extract them later, providing a simple and reliable method for hiding data in audio files.
+This project implements advanced audio steganography on MP3 files using multiple LSB embedding techniques specifically designed to survive MP3 compression. The implementation includes several MP3-robust steganography methods, from traditional LSB manipulation to sophisticated codec-aware and quantization noise techniques.
 
 ## Features
 
-- **Message Embedding**: Embed secret messages into MP3 files using ID3 tag storage
-- **Message Extraction**: Extract embedded messages from stego-audio files
-- **Metadata Storage**: Store embedding configuration and message data in ID3 tags
-- **PSNR Calculation**: Measure audio quality using Peak Signal-to-Noise Ratio (available but not used in main workflow)
-- **CLI Interface**: Command-line tool for easy usage
-- **Input Validation**: Validate stego key length and LSB parameters
-- **JSON Metadata**: Structured metadata storage in ID3 TXXX frames
+- **Multiple LSB Steganography**: True LSB embedding on audio samples (1-4 bits per sample)
+- **MP3-Robust Techniques**: Multiple embedding methods designed to survive MP3 compression
+- **MP3 Bitstream Embedding**: Direct manipulation of MP3 bitstream data
+- **Codec-Aware Steganography**: Advanced techniques that account for MP3 quantization
+- **Quantization Noise Manipulation**: Dithering-based embedding that survives compression
+- **Random Position Generation**: SHA256-based position selection using stego key as seed
+- **File Type Support**: Accept any file type as secret message
+- **Metadata Preservation**: Store original filename, extension, and embedding parameters
+- **PSNR Calculation**: Audio quality measurement for steganography assessment
+- **CLI Interface**: Command-line tool with comprehensive parameter support
 
 ## Project Structure
 
@@ -26,33 +29,47 @@ audio-steganography-lsb/
 │   └── cli/               # CLI interface using Cobra
 │       └── cli.go
 ├── pkg/
-│   ├── embed/             # Message embedding functionality
+│   ├── embed/             # Multiple LSB embedding techniques
 │   │   ├── embed.go
 │   │   └── embed_test.go
-│   ├── extract/           # Message extraction functionality
+│   ├── extract/           # Multi-method extraction with fallbacks
 │   │   ├── extract.go
 │   │   └── extract_test.go
-│   ├── encoder/           # Audio encoding utilities
-│   │   ├── encoder.go
-│   │   └── encoder_test.go
-│   ├── metadata/          # ID3 metadata handling
+│   ├── lame/              # MP3 encoding wrapper
+│   │   └── lame.go
+│   ├── metadata/          # Metadata handling
 │   │   ├── metadata.go
 │   │   └── metadata_test.go
 │   ├── psnr/              # Audio quality measurement
 │   │   ├── psnr.go
 │   │   └── psnr_test.go
-│   └── utils/             # Common utilities
+│   └── utils/             # Common utilities and validation
 │       ├── utils.go
 │       └── utils_test.go
-├── test/                  # Test files and demo
+├── test/                  # Test files and demo scripts
 ├── go.mod                 # Go module definition
 ├── go.sum                 # Go module checksums
 ├── Makefile              # Build and test commands
-├── test_demo.sh          # Demo script
 └── README.md             # This file
 ```
 
 ## Installation
+
+### Prerequisites
+
+For optimal MP3 encoding quality, install LAME MP3 encoder:
+```bash
+# macOS
+brew install lame
+
+# Ubuntu/Debian
+sudo apt-get install lame
+
+# CentOS/RHEL
+sudo yum install lame
+```
+
+### Build Instructions
 
 1. Clone the repository:
 ```bash
@@ -60,7 +77,7 @@ git clone <repository-url>
 cd audio-steganography-lsb
 ```
 
-2. Install dependencies:
+2. Install Go dependencies:
 ```bash
 make deps
 ```
@@ -86,10 +103,10 @@ make build
 
 **Parameters:**
 - `--cover, -c`: Cover audio file (MP3)
-- `--message, -m`: Secret message file
-- `--key, -k`: Steganography key (max 25 characters)
-- `--lsb, -l`: Number of LSB bits to use (1-4) - *Note: Accepted for compatibility but not used in ID3 tag storage*
-- `--random, -r`: Use random seed for embedding positions - *Note: Accepted for compatibility but not used in ID3 tag storage*
+- `--message, -m`: Secret message file (any file type)
+- `--key, -k`: Steganography key (max 25 characters, used for encryption and position generation)
+- `--lsb, -l`: Number of LSB bits to use (1-4, affects capacity and robustness)
+- `--random, -r`: Use random seed for embedding positions (improves security)
 - `--output, -o`: Output stego audio file
 
 ### Extracting a Message
@@ -103,117 +120,112 @@ make build
 
 **Parameters:**
 - `--stego, -s`: Stego audio file (MP3)
-- `--key, -k`: Steganography key (max 25 characters)
-- `--output, -o`: Output message file
+- `--key, -k`: Steganography key (must match embedding key)
+- `--output, -o`: Output extracted file
 
 ## Technical Implementation
 
-### ID3 Tag Steganography
+### Core Steganography Methods
 
-The implementation uses ID3 tag storage where:
-- Secret messages are stored in ID3 TXXX (User Defined Text) frames
-- No audio sample modification is performed
-- Data is stored in MP3 metadata tags, not in the audio stream itself
-- Two separate TXXX frames are used for different purposes
+The implementation provides multiple embedding techniques optimized for different scenarios:
 
-### Metadata Storage
+#### 1. MP3 Bitstream Embedding (Primary Method)
+- **Function**: `embedMP3Bitstream()`
+- **Approach**: Direct manipulation of MP3 bitstream data
+- **Advantages**: Avoids lossy re-encoding, preserves data integrity
+- **Process**:
+  - Identifies embeddable positions in MP3 frames
+  - Avoids sync patterns and headers
+  - Uses parameter header for extraction configuration
 
-Embedding configuration and message data are stored in ID3 tags:
+#### 2. Traditional LSB Steganography
+- **Function**: `embedLSB()`
+- **Approach**: Classic LSB modification on decoded audio samples
+- **Process**: MP3 decode → LSB modification → MP3 re-encode
+- **Use Case**: When maximum compatibility is needed
 
-#### STEGO_METADATA Frame
-- **Description**: "STEGO_METADATA"
-- **Content**: JSON containing:
-  - Original filename and extension
-  - File size
-  - Configuration flags (encryption, random seed, n_lsb)
-  - UTF-8 encoding
+#### 3. MP3-Robust LSB
+- **Function**: `embedLSBRobust()`
+- **Features**:
+  - Error correction coding (3x redundancy)
+  - Higher-order bit usage (LSB+2, LSB+3)
+  - Larger magnitude changes for compression survival
+- **Robustness**: Designed to survive MP3 re-compression
 
-#### SECRET_MESSAGE Frame
-- **Description**: "SECRET_MESSAGE"
-- **Content**: Raw message data as string
-- **Encoding**: UTF-8
+#### 4. Magnitude-Based Encoding
+- **Function**: `embedMP3Compatible()`
+- **Technique**: Odd/even magnitude encoding
+- **Advantage**: More resistant to quantization than direct LSB
+- **Method**: Bit 1 = odd magnitude, Bit 0 = even magnitude
 
-### Data Flow
+#### 5. Quantization Noise Manipulation
+- **Function**: `embedQuantizationNoise()`
+- **Approach**: Controlled dithering that survives MP3 quantization
+- **Innovation**: Uses triangular dithering patterns preserved by MP3
+- **Calculation**: Adaptive quantization step estimation
 
-1. **Embedding Process**:
-   - Read secret message file
-   - Create metadata JSON with file information
-   - Copy original MP3 file to output location
-   - Store metadata in ID3 TXXX frame
-   - Store message data in separate ID3 TXXX frame
+#### 6. Codec-Aware Steganography
+- **Function**: `embedCodecAwareLSB()`
+- **Integration**: Works with LAME encoder parameters
+- **Optimization**: Embedding aligned with MP3 psychoacoustic model
 
-2. **Extraction Process**:
-   - Open stego MP3 file
-   - Search for "SECRET_MESSAGE" TXXX frame
-   - Extract and write message data to output file
+### Position Generation
 
-### Audio Quality Measurement
+#### Random Positions
+- **Method**: SHA256 hash of stego key generates deterministic pseudo-random positions
+- **Security**: Prevents sequential pattern detection
+- **Implementation**: Hash-based position selection with collision avoidance
 
-PSNR (Peak Signal-to-Noise Ratio) calculation is available but not used in the main workflow:
+#### Sequential Positions
+- **Fallback**: Used when random generation insufficient
+- **Predictability**: Lower security but guaranteed capacity
+
+### Metadata Management
+
+**Embedded Information:**
+- Original filename and extension
+- File size and data length
+- Embedding configuration (nLsb, random seed, encryption flags)
+- Serialized as binary data with length prefixes
+
+**Storage Format:**
+```
+[4 bytes: metadata length] + [metadata] + [4 bytes: message length] + [message data]
+```
+
+### Extraction Strategy
+
+**Multi-Method Fallback System:**
+1. **MP3 Bitstream**: Attempts parameter header extraction first
+2. **Codec-Aware**: Falls back to codec-aware extraction
+3. **Traditional LSB**: Final fallback to basic LSB extraction
+4. **Parameter Guessing**: Tries all nLsb/random combinations if needed
+
+### Audio Quality Assessment
+
+**PSNR Calculation:**
 ```
 PSNR = 10 × log₁₀(MAX² / MSE)
 ```
 Where:
-- MAX = 32767 (maximum value for 16-bit audio)
+- MAX = 32767 (16-bit audio maximum)
 - MSE = Mean Squared Error between original and stego audio
 
-Quality thresholds:
-- PSNR ≥ 30 dB: Acceptable quality
-- PSNR ≥ 40 dB: Good quality
-- PSNR ≥ 50 dB: Excellent quality
-
-**Note**: Since no audio samples are modified, PSNR calculation is not performed during the embedding process.
+**Quality Thresholds:**
+- PSNR ≥ 30 dB: Acceptable quality (minimal distortion)
+- PSNR ≥ 40 dB: Good quality (barely perceptible)
+- PSNR ≥ 50 dB: Excellent quality (imperceptible)
 
 ## Testing
 
-Run all tests:
+### Run Tests
 ```bash
+# All tests
 make test
-```
 
-Run tests with coverage:
-```bash
+# With coverage report
 make test-coverage
+
+# Specific package
+go test ./pkg/embed/
 ```
-
-### Test Coverage
-
-The test suite covers:
-- Input validation (stego key length, n_lsb values)
-- ID3 metadata creation and validation
-- Message embedding and extraction
-- PSNR calculations (utility functions)
-- Error handling scenarios
-- File I/O operations
-- JSON metadata serialization/deserialization
-
-## Dependencies
-
-- `github.com/hajimehoshi/go-mp3`: MP3 decoding
-- `github.com/bogem/id3v2`: ID3 tag handling
-- `github.com/spf13/cobra`: CLI framework
-- `github.com/stretchr/testify`: Testing framework
-
-## Limitations
-
-1. **Implementation Method**: Uses ID3 tag steganography, not LSB audio sample modification
-2. **Detection**: ID3 tags can be easily detected and modified by standard MP3 tools
-3. **Capacity**: Limited by ID3 tag size limits (typically ~256MB per tag)
-4. **Security**: No encryption of stored data - messages are stored in plain text
-5. **Compatibility**: Requires MP3 files with ID3 tag support
-6. **Steganography**: Not true steganography as data is stored in metadata, not hidden in audio
-7. **MP3 Encoding**: Uses MP3 decoding but requires external tools for re-encoding
-
-## Future Enhancements
-
-1. **True LSB Steganography**: Implement actual LSB audio sample modification
-2. **MP3 Encoding**: Add complete MP3 encoding capability
-3. **Encryption Support**: Encrypt message data before storing in ID3 tags
-4. **Additional Audio Formats**: Support for WAV, FLAC, and other formats
-5. **GUI Interface**: Graphical user interface for easier usage
-6. **Batch Processing**: Process multiple files simultaneously
-7. **Steganalysis Resistance**: Implement more sophisticated hiding techniques
-
-## License
-
-This project is part of a cryptography course assignment.

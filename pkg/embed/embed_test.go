@@ -131,7 +131,7 @@ func TestEmbedValidation(t *testing.T) {
 				OutputPath:    outputFile,
 			},
 			expectError: true,
-			errorMsg:    "failed to open cover audio",
+			errorMsg:    "failed to read MP3 file",
 		},
 	}
 
