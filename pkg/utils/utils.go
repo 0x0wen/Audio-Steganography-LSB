@@ -7,6 +7,12 @@ import (
 	"os"
 )
 
+// GetSHA256Hash menghitung hash SHA256 dari sebuah string.
+func GetSHA256Hash(text string) []byte {
+	hash := sha256.Sum256([]byte(text))
+	return hash[:]
+}
+
 func ValidateStegoKey(key string) error {
 	if len(key) == 0 {
 		return fmt.Errorf("stego key cannot be empty")

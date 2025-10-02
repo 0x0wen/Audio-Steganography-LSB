@@ -23,16 +23,21 @@ func NewCodecAwareEncoder(sampleRate, channels, bitrate int) *CodecAwareEncoder 
 
 func (e *CodecAwareEncoder) EncodeWithSteganography(samples []int16, secretBits []bool, outputPath string) error {
 
+	fmt.Printf("Applying codec-aware modifications...\n")
 	tempWavPath := outputPath + ".stego.wav"
 	if err := e.createWavFile(samples, tempWavPath); err != nil {
 		return fmt.Errorf("failed to create temporary WAV: %w", err)
 	}
+	fmt.Printf("finished\n")
+
 	defer os.Remove(tempWavPath)
+
+	fmt.Printf("Encoding temporary WAV to MP3...\n")
 
 	if err := e.encodeWavToMP3(tempWavPath, outputPath); err != nil {
 		return fmt.Errorf("failed to encode to MP3: %w", err)
 	}
-
+	fmt.Printf("Stego MP3 created at %s\n", outputPath)
 	return nil
 }
 
@@ -148,11 +153,11 @@ func (e *CodecAwareEncoder) createWavFile(samples []int16, outputPath string) er
 		return err
 	}
 
-	for _, sample := range samples {
-		if err := binary.Write(file, binary.LittleEndian, sample); err != nil {
-			return err
-		}
+	fmt.Printf("Writing %d samples to WAV file...\n", len(samples))
+	if err := binary.Write(file, binary.LittleEndian, samples); err != nil {
+		return err
 	}
+	fmt.Printf("WAV file writing completed.\n")
 
 	return nil
 }
