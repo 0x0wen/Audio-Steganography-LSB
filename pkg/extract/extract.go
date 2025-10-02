@@ -7,7 +7,7 @@ import (
 
 	"audio-steganography-lsb/pkg/lame"
 	"audio-steganography-lsb/pkg/utils"
-	"audio-steganography-lsb/pkg/encrypt"
+	"audio-steganography-lsb/pkg/vigenere"
 
 	"github.com/hajimehoshi/go-mp3"
 )

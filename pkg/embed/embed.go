@@ -8,9 +8,9 @@ import (
 
 	"audio-steganography-lsb/pkg/utils"
 
-	"github.com/hajimehoshi/go-mp3"
+	// "github.com/hajimehoshi/go-mp3"
 
-	"audio-steganography-lsb/pkg/encrypt"
+	"audio-steganography-lsb/pkg/vigenere"
 )
 
 type EmbedConfig struct {
@@ -46,20 +46,18 @@ func Embed(config *EmbedConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to read secret message: %w", err)
 	}else if config.UseEncryption{
-		messageData = encrypt.VigenereEncrypt(messageData, config.StegoKey)
+		messageData = vigenere.Encrypt(messageData, config.StegoKey)
 	}
 
-	stegoMetadata, err := metadata.CreateMetadataFromFile(
-		config.SecretMessage,
-		config.UseEncryption,
-		config.UseRandomSeed,
-		config.NLsb,
-	)
+	// stegoMetadata, err := metadata.CreateMetadataFromFile(
+	// 	config.SecretMessage,
+	// 	config.UseEncryption,
+	// 	config.UseRandomSeed,
+	// 	config.NLsb,
+	// )
 	fileInfo, err := os.Stat(config.SecretMessage)
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
-	}else if config.UseEncryption{
-		messageData = encrypt.VigenereEncrypt(messageData, config.StegoKey)
 	}
 
 	metadata := &FileMetadata{
@@ -115,6 +113,8 @@ func embedMP3Bitstream(coverPath string, messageData []byte, metadata *FileMetad
 	dataToEmbed = append(dataToEmbed, messageLenBytes...)
 
 	dataToEmbed = append(dataToEmbed, messageData...)
+
+	fmt.Printf("Total data to embed (metadata + message): %d bytes\n", len(dataToEmbed))
 
 	if err := embedDataInMP3Frames(modifiedMP3Data, embeddablePositions[64:], dataToEmbed, stegoKey, useRandomSeed, nLsb); err != nil {
 		return fmt.Errorf("failed to embed data in MP3 frames: %w", err)
@@ -179,16 +179,18 @@ func embedParameterHeader(mp3Data []byte, positions []int, header []byte) error 
 func embedDataInMP3Frames(mp3Data []byte, positions []int, data []byte, stegoKey string, useRandomSeed bool, nLsb int) error {
 	bits := bytesToBits(data)
 
+	// fmt.Printf("Generating Positions")
 	dataPositions, err := utils.GeneratePositions(stegoKey, useRandomSeed, len(positions), nLsb)
 	if err != nil {
 		return fmt.Errorf("failed to generate positions: %w", err)
 	}
-
+	// fmt.Printf("calculating capacity")
 	capacity := len(dataPositions) * nLsb
 	if len(bits) > capacity {
 		return fmt.Errorf("data too large: need %d bits, capacity is %d bits", len(bits), capacity)
 	}
 
+	fmt.Printf("Embedding %d bits into %d positions using %d LSBs (capacity %d bits)\n", len(bits), len(dataPositions), nLsb, capacity)
 	bitIndex := 0
 	for _, posIndex := range dataPositions {
 		if bitIndex >= len(bits) || posIndex >= len(positions) {
