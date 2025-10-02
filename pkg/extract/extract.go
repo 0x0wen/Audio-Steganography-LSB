@@ -34,25 +34,25 @@ func Extract(config *ExtractConfig) error {
 		return fmt.Errorf("invalid stego key: %w", err)
 	}
 
-	fmt.Printf("DEBUG: Trying MP3 bitstream extraction\n")
+	// fmt.Printf("DEBUG: Trying MP3 bitstream extraction\n")
 	messageData, err := extractMP3Bitstream(config.StegoAudio, config.StegoKey)
 	if err != nil {
-		fmt.Printf("DEBUG: MP3 bitstream extraction failed: %v\n", err)
+		// fmt.Printf("DEBUG: MP3 bitstream extraction failed: %v\n", err)
 
-		fmt.Printf("DEBUG: Falling back to sample-based extraction\n")
+		// fmt.Printf("DEBUG: Falling back to sample-based extraction\n")
 		audioSamples, err := readAudioSamples(config.StegoAudio)
 		if err != nil {
 			return fmt.Errorf("failed to read audio samples: %w", err)
 		}
 
-		fmt.Printf("DEBUG: Trying codec-aware extraction with %d samples\n", len(audioSamples))
+		// fmt.Printf("DEBUG: Trying codec-aware extraction with %d samples\n", len(audioSamples))
 		messageData, err = extractCodecAwareLSB(audioSamples, config.StegoKey)
 		if err != nil {
-			fmt.Printf("DEBUG: Codec-aware extraction failed: %v\n", err)
-			fmt.Printf("DEBUG: Trying original LSB extraction\n")
+			// fmt.Printf("DEBUG: Codec-aware extraction failed: %v\n", err)
+			// fmt.Printf("DEBUG: Trying original LSB extraction\n")
 			messageData, err = extractLSB(audioSamples, config.StegoKey)
 			if err != nil {
-				fmt.Printf("DEBUG: Original LSB extraction failed: %v\n", err)
+				// fmt.Printf("DEBUG: Original LSB extraction failed: %v\n", err)
 				return fmt.Errorf("failed to extract data using all methods: %w", err)
 			}
 		}
@@ -84,17 +84,17 @@ func extractMP3Bitstream(stegoPath, stegoKey string) ([]byte, error) {
 
 	paramHeader, err := extractParameterHeader(mp3Data, embeddablePositions[:64])
 	if err != nil {
-		fmt.Printf("DEBUG: Failed to extract parameter header: %v\n", err)
+		// fmt.Printf("DEBUG: Failed to extract parameter header: %v\n", err)
 		return extractMP3BitstreamLegacy(mp3Data, embeddablePositions, stegoKey)
 	}
 
 	params, err := parseParameterHeader(paramHeader, stegoKey)
 	if err != nil {
-		fmt.Printf("DEBUG: Invalid parameter header: %v\n", err)
+		// fmt.Printf("DEBUG: Invalid parameter header: %v\n", err)
 		return extractMP3BitstreamLegacy(mp3Data, embeddablePositions, stegoKey)
 	}
 
-	fmt.Printf("DEBUG: Found valid parameter header - nLsb=%d, useRandom=%t\n", params.nLsb, params.useRandomSeed)
+	// fmt.Printf("DEBUG: Found valid parameter header - nLsb=%d, useRandom=%t\n", params.nLsb, params.useRandomSeed)
 
 	dataPositions := embeddablePositions[64:]
 
@@ -102,7 +102,7 @@ func extractMP3Bitstream(stegoPath, stegoKey string) ([]byte, error) {
 	segmentSize := 50000
 
 	if len(dataPositions) > maxPositionsNeeded {
-		fmt.Printf("DEBUG: Large file detected with %d positions, trying segmented extraction\n", len(dataPositions))
+		// fmt.Printf("DEBUG: Large file detected with %d positions, trying segmented extraction\n", len(dataPositions))
 
 		dataPositions = dataPositions[:segmentSize]
 	}
@@ -122,7 +122,7 @@ func extractMP3Bitstream(stegoPath, stegoKey string) ([]byte, error) {
 	}
 
 	metadataLen := binary.LittleEndian.Uint32(headerData[0:4])
-	fmt.Printf("DEBUG: MP3 bitstream metadata length: %d\n", metadataLen)
+	// fmt.Printf("DEBUG: MP3 bitstream metadata length: %d\n", metadataLen)
 
 	if int(metadataLen) > len(headerData)-4 || metadataLen > 10000 { 
 		return nil, fmt.Errorf("invalid metadata length: %d", metadataLen)
@@ -140,7 +140,7 @@ func extractMP3Bitstream(stegoPath, stegoKey string) ([]byte, error) {
 	}
 
 	messageLen := binary.LittleEndian.Uint32(headerData[4+metadataLen:4+metadataLen+4])
-	fmt.Printf("DEBUG: MP3 bitstream message length: %d\n", messageLen)
+	// fmt.Printf("DEBUG: MP3 bitstream message length: %d\n", messageLen)
 
 	if messageLen > 100*1024*1024 {
 		return nil, fmt.Errorf("message length too large: %d", messageLen)
@@ -160,7 +160,7 @@ func extractMP3Bitstream(stegoPath, stegoKey string) ([]byte, error) {
 	messageStart := 4 + int(metadataLen) + 4
 	messageEnd := messageStart + int(messageLen)
 	if messageEnd <= len(data) && messageLen > 0 {
-		fmt.Printf("DEBUG: MP3 bitstream validation passed, returning message\n")
+		// fmt.Printf("DEBUG: MP3 bitstream validation passed, returning message\n")
 		return data[messageStart:messageEnd], nil
 	}
 
@@ -179,7 +179,7 @@ func extractLimitedMP3Data(mp3Data []byte, dataPositions []int, positions []int,
 
 	limitedPositions := positions[:positionsNeeded]
 
-	fmt.Printf("DEBUG: Extracting limited data - need %d bytes (%d bits), using %d positions\n", maxBytes, maxBits, len(limitedPositions))
+	// fmt.Printf("DEBUG: Extracting limited data - need %d bytes (%d bits), using %d positions\n", maxBytes, maxBits, len(limitedPositions))
 
 	var bits []bool
 	for _, posIndex := range limitedPositions {
@@ -286,7 +286,7 @@ func parseParameterHeader(header []byte, stegoKey string) (*ParameterHeader, err
 }
 
 func extractMP3BitstreamLegacy(mp3Data []byte, embeddablePositions []int, stegoKey string) ([]byte, error) {
-	fmt.Printf("DEBUG: Using legacy extraction method (guessing parameters)\n")
+	// fmt.Printf("DEBUG: Using legacy extraction method (guessing parameters)\n")
 
 	for nLsb := 1; nLsb <= 4; nLsb++ {
 		for useRandom := 0; useRandom < 2; useRandom++ {
@@ -303,24 +303,24 @@ func extractMP3BitstreamLegacy(mp3Data []byte, embeddablePositions []int, stegoK
 			}
 
 			if len(data) > 0 {
-				fmt.Printf("DEBUG: MP3 bitstream got %d bytes of data\n", len(data))
+				// fmt.Printf("DEBUG: MP3 bitstream got %d bytes of data\n", len(data))
 				if len(data) >= 8 {
 					metadataLen := binary.LittleEndian.Uint32(data[0:4])
-					fmt.Printf("DEBUG: MP3 bitstream metadata length: %d\n", metadataLen)
+					// fmt.Printf("DEBUG: MP3 bitstream metadata length: %d\n", metadataLen)
 					if int(metadataLen) < len(data)-4 {
 						messageLen := binary.LittleEndian.Uint32(data[4+metadataLen:4+metadataLen+4])
-						fmt.Printf("DEBUG: MP3 bitstream message length: %d\n", messageLen)
+						// fmt.Printf("DEBUG: MP3 bitstream message length: %d\n", messageLen)
 						if int(4+metadataLen+4+messageLen) <= len(data) {
 							messageStart := 4 + int(metadataLen) + 4
 							messageEnd := messageStart + int(messageLen)
 							if messageEnd <= len(data) && messageLen > 0 {
-								fmt.Printf("DEBUG: MP3 bitstream validation passed, returning message\n")
+								// fmt.Printf("DEBUG: MP3 bitstream validation passed, returning message\n")
 								return data[messageStart:messageEnd], nil
 							}
 						}
 					}
 				}
-				fmt.Printf("DEBUG: MP3 bitstream data validation failed for nLsb=%d, useRandom=%d\n", nLsb, useRandom)
+				// fmt.Printf("DEBUG: MP3 bitstream data validation failed for nLsb=%d, useRandom=%d\n", nLsb, useRandom)
 				continue 
 			}
 		}
@@ -332,7 +332,7 @@ func extractMP3BitstreamLegacy(mp3Data []byte, embeddablePositions []int, stegoK
 func extractFromMP3Frames(mp3Data []byte, embeddablePositions []int, positions []int, nLsb int) ([]byte, error) {
 	var bits []bool
 
-	fmt.Printf("DEBUG: MP3 extraction from %d positions with nLsb=%d\n", len(positions), nLsb)
+	// fmt.Printf("DEBUG: MP3 extraction from %d positions with nLsb=%d\n", len(positions), nLsb)
 
 	for _, posIndex := range positions {
 		if posIndex >= len(embeddablePositions) {
@@ -350,7 +350,7 @@ func extractFromMP3Frames(mp3Data []byte, embeddablePositions []int, positions [
 		}
 	}
 
-	fmt.Printf("DEBUG: MP3 extracted %d bits\n", len(bits))
+	// fmt.Printf("DEBUG: MP3 extracted %d bits\n", len(bits))
 
 	if len(bits) < 8 {
 		return nil, fmt.Errorf("not enough bits extracted")
